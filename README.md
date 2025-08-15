@@ -2,7 +2,7 @@
 
 ![EDAPT Overview](./assets/edapt_overview.png)
 
-This repository contains research code for the preprint:   
+This repository contains research code for the [preprint](https://arxiv.org/abs/2508.10474):   
 ***EDAPT: Towards Calibration-Free BCIs with Continual Online Adaptation***   
 by [Haxel*](mailto:lisa.haxel@uni-tuebingen.de), [Kapoor*](mailto:jaivardhan.kapoor@uni-tuebingen.de), [Ziemann](https://ziemannlab.com), and [Macke†](https://mackelab.org) (2025).
 
