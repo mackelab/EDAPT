@@ -106,13 +106,13 @@ Use the Jupyter notebooks in the repository to create the figures from the gener
 - **Memory**: 8GB+ RAM for larger datasets
 
 ## Citation
-
+Please cite our [preprint](https://arxiv.org/abs/2508.10474) if you use this code:
 ```bibtex
 @article{haxel_kapoor2025edapt,
     title={EDAPT: Towards Calibration-Free BCIs with Continual Online Adaptation},
     author={Lisa Haxel and Jaivardhan Kapoor and Ulf Ziemann and Jakob H. Macke},
-    journal={},
-    year={2025}
+    year    = {2025},
+    journal = {arXiv preprint arXiv: 2508.10474}
 }
 ```
 
