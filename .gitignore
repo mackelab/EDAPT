@@ -1,0 +1,9 @@
+slurm_logs*/
+results/
+job_logs*/
+.cache/
+__pycache__/
+.cache
+wandb/
+.venv/
+figures/out/

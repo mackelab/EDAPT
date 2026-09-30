@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+license: MIT
+message: "If you use this code, please cite the paper below."
+type: software
+title: "EDAPT: towards calibration-free BCIs with continual online adaptation"
+authors:
+  - family-names: Haxel
+    given-names: Lisa
+  - family-names: Kapoor
+    given-names: Jaivardhan
+  - family-names: Ziemann
+    given-names: Ulf
+  - family-names: Macke
+    given-names: Jakob H.
+preferred-citation:
+  type: article
+  title: "EDAPT: towards calibration-free BCIs with continual online adaptation"
+  authors:
+    - family-names: Haxel
+      given-names: Lisa
+    - family-names: Kapoor
+      given-names: Jaivardhan
+    - family-names: Ziemann
+      given-names: Ulf
+    - family-names: Macke
+      given-names: Jakob H.
+  journal: "Journal of Neural Engineering"
+  volume: 23
+  issue: 2
+  start: "026025"
+  year: 2026
+  doi: "10.1088/1741-2552/ae5689"

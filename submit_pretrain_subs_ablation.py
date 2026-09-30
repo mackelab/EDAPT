@@ -1,4 +1,4 @@
-#%%
+# %%
 """
 Generates and submits SLURM jobs for evaluating model performance across different number of pre-training subjects.
 """
@@ -21,13 +21,14 @@ import submitit
 # ==========================================================================
 
 # Repository and environment setup
-REPO_DIR = Path(f"/mnt/lustre/work/macke/{os.environ.get('USER', 'user')}/repos/eegjepa")
-CONDA_ENV = "timeseries"
-SCRIPT_TO_RUN = REPO_DIR / "EDAPT_neurips/EDAPT/train_transfer.py"
-BASE_OUTPUT_DIR = REPO_DIR / "EDAPT_neurips/EDAPT/results/results_scaling_subjects"
+# Repo root; override with EDAPT_ROOT if launching from elsewhere.
+REPO_DIR = Path(os.environ.get("EDAPT_ROOT", Path(__file__).resolve().parent))
+CONDA_ENV = os.environ.get("EDAPT_CONDA_ENV", "edapt")
+SCRIPT_TO_RUN = REPO_DIR / "train_transfer.py"
+BASE_OUTPUT_DIR = REPO_DIR / "results"
 
 # SLURM & JOB CONFIGURATION
-SLURM_PARTITION = "a100-galvani"
+SLURM_PARTITION = os.environ.get("EDAPT_SLURM_PARTITION", "gpu")
 MEM_GB_PER_GPU = 96
 CPUS_PER_GPU = 8
 DEFAULT_DEVICE = "cuda"
@@ -38,19 +39,19 @@ PYTHON_EXECUTABLE = "python"
 # UTILITY FUNCTIONS
 # ==========================================================================
 
+
 def dict_to_cli_args(args_dict: Dict[str, Any]) -> str:
     """Converts a dictionary to a string of OmegaConf CLI arguments."""
     parts = []
     for key, value in args_dict.items():
         if value is None:
             continue
-        
+
         if isinstance(value, bool):
             parts.append(f"{key}={str(value).lower()}")
         elif isinstance(value, list):
             formatted_elements = [
-                f'"{item}"' if isinstance(item, str) else str(item)
-                for item in value
+                f'"{item}"' if isinstance(item, str) else str(item) for item in value
             ]
             list_str = f"[{','.join(formatted_elements)}]"
             parts.append(f"{key}={shlex.quote(list_str)}")
@@ -96,9 +97,11 @@ echo "------ Script Output ------" >> "{log_file}" && \\
     try:
         subprocess.run(cmd, shell=True, check=True, executable="/bin/bash", text=True)
     except subprocess.CalledProcessError as e:
-        print(f"ERROR: Command failed with exit code {e.returncode}. Check log: {log_file}")
+        print(
+            f"ERROR: Command failed with exit code {e.returncode}. Check log: {log_file}"
+        )
         raise RuntimeError(f"Script for '{exp_name}' failed. Log: {log_file}") from e
-    
+
     return f"Finished: {exp_name}"
 
 
@@ -106,12 +109,85 @@ echo "------ Script Output ------" >> "{log_file}" && \\
 # EXPERIMENT CONFIGURATION
 # ==========================================================================
 
-def setup_experiment_grid() -> List[Dict[str, Any]]:
+EXPECTED_SUBJECTS = {
+    "BI2015a": 43,
+    "BNCI2014_001": 9,
+    "Huebner2017": 13,
+    "Huebner2018": 12,
+    "Kalunga2016": 12,
+    "Lee2019_MI": 54,
+    "Lee2019_SSVEP": 54,
+    "MAMEM2": 10,
+    "Yang2025": 51,
+}
+
+
+def check_run_complete(exp_name: str, dataset: str) -> bool:
+    """Check if a run is complete by examining result files and checking for NaNs."""
+    import pandas as pd
+
+    results_dir = (
+        BASE_OUTPUT_DIR / "scaling_studies_nps_final_5fold_lr_1e-4_finetune_warmup_20"
+    )
+    run_dir = results_dir / exp_name
+    if not run_dir.exists():
+        return False
+
+    # find timestamp subdirs
+    subdirs = []
+    for item in run_dir.iterdir():
+        if item.is_dir():
+            for subitem in item.iterdir():
+                if subitem.is_dir() and subitem.name.startswith("202"):
+                    subdirs.append(subitem)
+            if item.name.startswith("202"):
+                subdirs.append(item)
+
+    if not subdirs:
+        return False
+
+    latest = sorted(subdirs)[-1]
+    csv_file = latest / "results_detailed.csv"
+    if not csv_file.exists():
+        return False
+
+    try:
+        df = pd.read_csv(csv_file)
+        expected = EXPECTED_SUBJECTS.get(dataset, 0)
+        # check row count
+        if len(df) != expected:
+            return False
+        # check for NaN values in key metric columns
+        metric_cols = [c for c in df.columns if "accuracy" in c.lower() or "auroc" in c.lower()]
+        if metric_cols and df[metric_cols].isna().any().any():
+            return False
+    except Exception:
+        return False
+
+    if not (latest / "results_trial_metrics.csv").exists():
+        return False
+    if not (latest / "results_predictions.npz").exists():
+        return False
+
+    return True
+
+
+def setup_experiment_grid(only_incomplete: bool = False) -> List[Dict[str, Any]]:
     """Configures the experimental grid for the pre-training subjects scaling analysis."""
     # --- Grid Search Parameters ---
     N_SPLITS = 5
     BASE_GRID_DIR = "scaling_studies_nps_final_5fold_lr_1e-4_finetune_warmup_20"
-    DATASETS = [["Yang2025"], ["Lee2019_SSVEP"], ["BI2015a"], ["Lee2019_MI"], ["BNCI2014_001"], ["Huebner2017"], ["Huebner2018"], ["Kalunga2016"], ["MAMEM2"]]
+    DATASETS = [
+        ["Yang2025"],
+        ["Lee2019_SSVEP"],
+        ["BI2015a"],
+        ["Lee2019_MI"],
+        ["BNCI2014_001"],
+        ["Huebner2017"],
+        ["Huebner2018"],
+        ["Kalunga2016"],
+        ["MAMEM2"],
+    ]
     MODELS_TO_EVALUATE = ["ShallowConvNet", "EEGNetv4", "ATCNet", "DeepConvNet"]
     PRETRAIN_FLAG = False  # False means 'no_pretrain=False', i.e., use pre-training
 
@@ -148,6 +224,10 @@ def setup_experiment_grid() -> List[Dict[str, Any]]:
         "seed": 42,
         "lr_finetune": 1e-4,
         "finetune_warmup_trials": 20,
+        "tta_buffer_length": 32,
+        "adabn_mode": "train_mode",
+        "window_size": 100,
+        "batch_size_finetune": 100,  # to match window size, so each epoch is full window
     }
 
     # --- Generate All Experiment Configurations ---
@@ -159,27 +239,38 @@ def setup_experiment_grid() -> List[Dict[str, Any]]:
 
         subject_counts = DATASET_SUBJECT_COUNTS[current_dataset_name]
         for num_subj in subject_counts:
-            exp_config = global_base_config.copy()
-            exp_config.update({k: v for k, v in ALIGNMENT_CONFIG.items() if k != "config_name"})
-
             pretrain_suffix = "_no_pretrain" if PRETRAIN_FLAG else ""
-            
-            exp_config.update({
-                "models_to_run": [model],
-                "dataset_names": [current_dataset_name], # Pass as a list
-                "no_pretrain": PRETRAIN_FLAG,
-                "num_pretrain_subjects": num_subj,
-                "custom_config_tag": ALIGNMENT_CONFIG['config_name'],
-                "wandb_group": f"ScalingNPS_{model}_{current_dataset_name}_{ALIGNMENT_CONFIG['config_name']}{pretrain_suffix}"
-            })
-            
             raw_exp_name = (
                 f"ScalingNPS_{model}_{current_dataset_name}_"
                 f"NPS{num_subj}_{ALIGNMENT_CONFIG['config_name']}{pretrain_suffix}"
             )
-            exp_config["experiment_name"] = re.sub(r'[^a-zA-Z0-9_.-]+', '', raw_exp_name)
-            exp_config["base_output_dir"] = str(BASE_OUTPUT_DIR / BASE_GRID_DIR / exp_config["experiment_name"])
-            
+            exp_name = re.sub(r"[^a-zA-Z0-9_.-]+", "", raw_exp_name)
+
+            # skip complete runs if only_incomplete is set
+            if only_incomplete and check_run_complete(exp_name, current_dataset_name):
+                continue
+
+            exp_config = global_base_config.copy()
+            exp_config.update(
+                {k: v for k, v in ALIGNMENT_CONFIG.items() if k != "config_name"}
+            )
+
+            exp_config.update(
+                {
+                    "models_to_run": [model],
+                    "dataset_names": [current_dataset_name],  # Pass as a list
+                    "no_pretrain": PRETRAIN_FLAG,
+                    "num_pretrain_subjects": num_subj,
+                    "custom_config_tag": ALIGNMENT_CONFIG["config_name"],
+                    "wandb_group": f"ScalingNPS_{model}_{current_dataset_name}_{ALIGNMENT_CONFIG['config_name']}{pretrain_suffix}",
+                }
+            )
+
+            exp_config["experiment_name"] = exp_name
+            exp_config["base_output_dir"] = str(
+                BASE_OUTPUT_DIR / BASE_GRID_DIR / exp_config["experiment_name"]
+            )
+
             experiments.append(exp_config)
 
     return experiments
@@ -189,8 +280,8 @@ def print_dry_run_summary(experiments: List[Dict[str, Any]]) -> None:
     """Prints a summary of the jobs that would be submitted."""
     total_jobs = len(experiments)
     print(f"\n--- DRY RUN: Would submit {total_jobs} jobs. ---")
-    
-    for i, cfg in enumerate(experiments[:min(3, total_jobs)]):
+
+    for i, cfg in enumerate(experiments[: min(3, total_jobs)]):
         print(f"\n--- Example Config {i+1} ({cfg['experiment_name']}) ---")
         for key, val in sorted(cfg.items()):
             print(f"    {key}: {val}")
@@ -200,15 +291,15 @@ def print_dry_run_summary(experiments: List[Dict[str, Any]]) -> None:
 def submit_experiments(experiments: List[Dict[str, Any]]) -> None:
     """Submits all generated experiment configurations to SLURM."""
     total_jobs = len(experiments)
-    
+
     for i, exp_config in enumerate(experiments):
-        job_name = re.sub(r'[^a-zA-Z0-9_.-]+', '', exp_config["experiment_name"])[:100]
-        
+        job_name = re.sub(r"[^a-zA-Z0-9_.-]+", "", exp_config["experiment_name"])[:100]
+
         print(f"\n--- Submitting Job {i+1}/{total_jobs}: {job_name} ---")
 
-        date_str = datetime.now().strftime('%Y-%m-%d')
+        date_str = datetime.now().strftime("%Y-%m-%d")
         log_folder = REPO_DIR / "slurm_logs_scaling_subjects" / date_str / job_name
-        
+
         executor = submitit.AutoExecutor(folder=str(log_folder))
         executor.update_parameters(
             slurm_partition=SLURM_PARTITION,
@@ -222,7 +313,9 @@ def submit_experiments(experiments: List[Dict[str, Any]]) -> None:
         )
 
         job = executor.submit(run_transfer_job, exp_config)
-        print(f"  > Submitted Job ID: {job.job_id} for experiment: {exp_config['experiment_name']}")
+        print(
+            f"  > Submitted Job ID: {job.job_id} for experiment: {exp_config['experiment_name']}"
+        )
         print(f"  > SLURM logs will be in: {log_folder}")
 
 
@@ -230,20 +323,40 @@ def submit_experiments(experiments: List[Dict[str, Any]]) -> None:
 # MAIN EXECUTION
 # ==========================================================================
 
+
 def main():
     """Main execution function to generate and submit SLURM jobs."""
-    parser = argparse.ArgumentParser(description="Submit Pre-training Subject Scaling Analysis Jobs")
+    parser = argparse.ArgumentParser(
+        description="Submit Pre-training Subject Scaling Analysis Jobs"
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print configurations instead of submitting jobs."
+        help="Print configurations instead of submitting jobs.",
+    )
+    parser.add_argument(
+        "--resubmit-incomplete",
+        action="store_true",
+        help="Only submit jobs for incomplete/missing runs.",
     )
     cli_args = parser.parse_args()
 
-    experiments_to_run = setup_experiment_grid()
+    if cli_args.resubmit_incomplete:
+        print("Checking for incomplete runs...")
+        experiments_to_run = setup_experiment_grid(only_incomplete=True)
+        print(f"Found {len(experiments_to_run)} incomplete/missing runs to resubmit.")
+    else:
+        experiments_to_run = setup_experiment_grid(only_incomplete=False)
+
     total_jobs = len(experiments_to_run)
-    
-    print(f"--- Generated {total_jobs} total experiment configurations for subject scaling analysis. ---")
+
+    if total_jobs == 0:
+        print("No jobs to submit. All runs are complete!")
+        sys.exit(0)
+
+    print(
+        f"--- Generated {total_jobs} total experiment configurations for subject scaling analysis. ---"
+    )
 
     if cli_args.dry_run:
         print_dry_run_summary(experiments_to_run)

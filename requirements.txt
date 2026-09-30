@@ -1,19 +1,26 @@
-einops==0.8.1
-lovely_tensors==0.1.18
-matplotlib==3.10.3
-mne==1.10.0
+# Versions match the environment used to produce the results in the paper
+# (Python 3.9-3.12 works; tested with 3.12 for the figure pipeline and smoke test).
+einops==0.7.0
+lovely_tensors==0.1.15
+matplotlib==3.8.3
+mne==1.8.0
 moabb==1.2.0
-numpy==2.3.2
+numpy==1.26.4
 omegaconf==2.3.0
-pandas==2.3.1
-psutil==5.9.0
+pandas==2.2.3
+psutil==5.9.8
 pyriemann==0.7
-rich==14.1.0
-scikit_learn==1.7.1
-scipy==1.16.1
-statsmodels==0.14.4
-submitit==1.5.3
-torch==2.7.0
+rich==14.0.0
+scikit_learn==1.4.1.post1
+scipy==1.13.1
+statsmodels==0.14.1
+submitit==1.5.2
+torch==2.5.1
 torchinfo==1.8.0
-tqdm==4.67.1
-wandb==0.21.0
+tqdm==4.66.2
+wandb==0.16.4
+# figure/table pipeline (figures/make_all.py) and smoke test
+ipykernel>=6.29
+nbclient>=0.10
+nbformat>=5.10
+pytest>=8

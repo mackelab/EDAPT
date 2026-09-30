@@ -1,6 +1,7 @@
 """WBCIC_SHU Motor Imagery dataset (Yang2025) for local data loading."""
 
 import logging
+import os
 from pathlib import Path
 
 import mne
@@ -10,10 +11,11 @@ from moabb.datasets.base import BaseDataset
 
 log = logging.getLogger(__name__)
 
-# Hardcoded path to raw dataset directory containing sub-001, sub-002, etc.
+# Raw dataset directory containing sub-001, sub-002, etc. (the "2C dataset"
+# folder of the WBCIC-SHU download). Set the YANG2025_DATA_DIR environment variable.
 HARDCODED_RAW_DATA_PATH = Path(
-    "/mnt/lustre/work/macke/mwe626/repos/eegjepa/data_prime/Yang2025_MI/WBCIC_SHU Motor Imagery dataset/sourcedata/2C dataset"
-)
+    os.environ.get("YANG2025_DATA_DIR", "~/data/Yang2025_MI/sourcedata/2C dataset")
+).expanduser()
 
 
 class Yang2025(BaseDataset):

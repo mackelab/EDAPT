@@ -6,24 +6,28 @@ Script to generate CSV data for Figure 4-9 supplements reproduction.
 import re
 from pathlib import Path
 import pandas as pd
-import os
+from paths import (
+    ALIGNMENT_RESULTS,
+    ISO_SCALING_RESULTS,
+    PREPARED_DATA_DIR,
+    SUBJECT_SCALING_RESULTS,
+    TRIAL_SCALING_RESULTS,
+)
 from collections import defaultdict
 
 # --- Consolidated Configurations (Copied directly from original script) ---
 # --- General ---
-USERNAME = os.environ.get('USER', 'default_user')
 PLOTS_OUTPUT_DIR = Path("./final_figure_plots_by_paradigm") # Not used here, but kept for consistency
 
 # --- Models and Datasets ---
 MODEL_NAMES = ["EEGNetv4", "ATCNet", "ShallowConvNet", "DeepConvNet"]
 DATASET_MAX_TRIALS_FIG5 = { "Yang2025": 600, "Kalunga2016": 64, "Lee2019_SSVEP": 200, "BI2015a": 1044, "Lee2019_MI": 200, "BNCI2014_001": 576, "Huebner2017": 12500, "Huebner2018": 14000, "MAMEM2": 100 }
 
-# --- Data Source Paths ---
-# IMPORTANT: Update these paths to point to your actual data directories.
-RESULTS_BASE_DIR_FIG3 = Path(f"/mnt/lustre/work/macke/{USERNAME}/repos/eegjepa/EDAPT_neurips/results_scaling/scaling_studies_nps_final_5fold_lr_1e-4_finetune_warmup_20")
-SCALING_RESULTS_BASE_DIR_FIG5 = Path(f"/mnt/lustre/work/macke/{USERNAME}/repos/eegjepa/EDAPT_neurips/results_scaling/trial_ablation_final")
-ALLTRIALS_RESULTS_BASE_DIR_FIG5 = Path(f"/mnt/lustre/work/macke/{USERNAME}/repos/eegjepa/EDAPT_neurips/results/alignment_studies_NMI_lr_1e-4_finetune_warmup_20")
-RESULTS_BASE_DIR_FIG6 = Path(f"/mnt/lustre/work/macke/{USERNAME}/repos/eegjepa/EDAPT_neurips/results_scaling/iso_scaling_studies_final_2.0")
+# --- Data Source Paths (configured in paths.py; override with EDAPT_* env vars) ---
+RESULTS_BASE_DIR_FIG3 = SUBJECT_SCALING_RESULTS
+SCALING_RESULTS_BASE_DIR_FIG5 = TRIAL_SCALING_RESULTS
+ALLTRIALS_RESULTS_BASE_DIR_FIG5 = ALIGNMENT_RESULTS
+RESULTS_BASE_DIR_FIG6 = ISO_SCALING_RESULTS
 
 # --- Column Names & Configs ---
 MODEL_COL = "model"
@@ -34,11 +38,20 @@ NT_COL_FIG5 = "num_trials"
 NPS_COL_FIG6 = "num_pretrain_subjects"
 NT_COL_FIG6 = "num_trials"
 
+# --- Helper function to filter to most recent timestamp ---
+def _filter_to_most_recent_timestamp(files):
+    """Keep only most recent timestamp per experiment directory."""
+    by_exp = defaultdict(list)
+    for f in files:
+        ts = next((p for p in f.parts if re.match(r"^\d{8}_\d{6}(_\d+)?$", p)), "0")
+        by_exp[f.parent.parent].append((ts, f))
+    return [sorted(v, reverse=True)[0][1] for v in by_exp.values()]
+
 # --- Data Loading and Parsing Functions (Copied directly from original script) ---
 def _fig3_parse_experiment_name(results_file_path: Path):
     try:
-        for part in [results_file_path.parent.parent.parent.name, results_file_path.parent.parent.name]:
-            match = re.search(r"ScalingEval_(?P<model>[^_]+)_(?P<dataset>.+?)_NPS(?P<nps>[^_]+)_(?P<config>.*)", part)
+        for part in [results_file_path.parent.parent.parent.name, results_file_path.parent.parent.name, results_file_path.parent.name]:
+            match = re.search(r"ScalingNPS_(?P<model>[^_]+)_(?P<dataset>.+?)_NPS(?P<nps>[^_]+)_(?P<config>.*)", part)
             if match:
                 details = match.groupdict()
                 details["config"] = details["config"].replace("_SI-F", "")
@@ -75,7 +88,8 @@ def _fig6_parse_iso_exp_name(results_file_path: Path):
 
 def _fig3_load_all_results(results_base_dir: Path) -> pd.DataFrame:
     all_dfs = []
-    found_files = list(results_base_dir.rglob("**/results_detailed.csv"))
+    all_files = list(results_base_dir.rglob("**/results_detailed.csv"))
+    found_files = _filter_to_most_recent_timestamp(all_files)
     print(f"   Found {len(found_files)} potential files for subject ablation.")
     for csv_file in found_files:
         exp_details = _fig3_parse_experiment_name(csv_file)
@@ -98,7 +112,8 @@ def _fig3_preprocess_nps_column(df: pd.DataFrame) -> pd.DataFrame:
 def _fig5_load_all_results(base_dirs: list[Path]) -> pd.DataFrame:
     all_dfs = []
     for current_base_dir in base_dirs:
-        found_files = list(current_base_dir.rglob("**/results_detailed.csv"))
+        all_files = list(current_base_dir.rglob("**/results_detailed.csv"))
+        found_files = _filter_to_most_recent_timestamp(all_files)
         print(f"   Found {len(found_files)} potential files in {current_base_dir.name}.")
         for csv_file_path in found_files:
             try:
@@ -120,7 +135,8 @@ def _fig5_preprocess_nt_column(df: pd.DataFrame) -> pd.DataFrame:
 
 def _fig6_load_all_results(base_dir: Path) -> pd.DataFrame:
     all_dfs = []
-    found_files = list(base_dir.rglob("**/results_detailed.csv"))
+    all_files = list(base_dir.rglob("**/results_detailed.csv"))
+    found_files = _filter_to_most_recent_timestamp(all_files)
     print(f"   Found {len(found_files)} potential files for iso-ablation.")
     for csv_file in found_files:
         details = _fig6_parse_iso_exp_name(csv_file)
@@ -134,7 +150,7 @@ def _fig6_load_all_results(base_dir: Path) -> pd.DataFrame:
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
-    OUTPUT_CSV_DIR = Path("./prepared_data")
+    OUTPUT_CSV_DIR = PREPARED_DATA_DIR
     OUTPUT_CSV_DIR.mkdir(parents=True, exist_ok=True)
     print(f"--- Starting Data Preparation. Output will be saved to '{OUTPUT_CSV_DIR}' ---")
 
